@@ -28,6 +28,19 @@ class ChildSumTreeLSTM(nn.Module):
         self.ux = nn.Linear(self.in_dim,self.mem_dim)
         self.uh = nn.Linear(self.mem_dim,self.mem_dim)
 
+        if self.cudaFlag:
+            self.ix = self.ix.cuda()
+            self.ih = self.ih.cuda()
+
+            self.fx = self.fx.cuda()
+            self.fh = self.fh.cuda()
+
+            self.ox = self.ox.cuda()
+            self.oh = self.oh.cuda()
+
+            self.ux = self.ux.cuda()
+            self.uh = self.uh.cuda()
+
     def node_forward(self, inputs, child_c, child_h):
         child_h_sum = F.torch.sum(torch.squeeze(child_h,1),0)
 
@@ -105,5 +118,5 @@ class SimilarityTreeLSTM(nn.Module):
     def forward(self, ltree, linputs, rtree, rinputs):
         lstate, lhidden = self.childsumtreelstm(ltree, linputs)
         rstate, rhidden = self.childsumtreelstm(rtree, rinputs)
-        output = self.similarity(lstate, rstate)
+        output = self.similarity(lhidden, rhidden)
         return output
