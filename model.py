@@ -118,5 +118,5 @@ class SimilarityTreeLSTM(nn.Module):
     def forward(self, ltree, linputs, rtree, rinputs):
         lstate, lhidden = self.childsumtreelstm(ltree, linputs)
         rstate, rhidden = self.childsumtreelstm(rtree, rinputs)
-        output = self.similarity(lhidden, rhidden)
+        output = self.similarity(lstate, rstate)
         return output
