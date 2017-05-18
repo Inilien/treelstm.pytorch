@@ -8,16 +8,20 @@ def parse_args():
                         help='directory with GLOVE embeddings')
     parser.add_argument('--batchsize', default=25, type=int,
                         help='batchsize for optimizer updates')
-    parser.add_argument('--epochs', default=15, type=int,
+    parser.add_argument('--epochs', default=30, type=int,
                         help='number of total epochs to run')
-    parser.add_argument('--lr', default=0.01, type=float,
+    parser.add_argument('--lr', default=1e-3, type=float,
                         metavar='LR', help='initial learning rate')
-    parser.add_argument('--wd', default=1e-4, type=float,
+    parser.add_argument('--wd', default=0, type=float,
                         help='weight decay (default: 1e-4)')
+    parser.add_argument('--dropout_prob', default=0.25, type=float,
+                        help='dropout probability')
+    parser.add_argument('--rhn_depth', default=3, type=int,
+        help='number of additional steps in recurrent highway network')
     parser.add_argument('--sparse', action='store_true',
                         help='Enable sparsity for embeddings, \
                               incompatible with weight decay')
-    parser.add_argument('--optim', default='adagrad',
+    parser.add_argument('--optim', default='adam',
                         help='optimizer (default: adagrad)')
     parser.add_argument('--seed', default=123, type=int,
                         help='random seed (default: 123)')

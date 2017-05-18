@@ -31,7 +31,7 @@ from trainer import Trainer
 def main():
     global args
     args = parse_args()
-    args.input_dim, args.mem_dim = 300, 150
+    args.input_dim, args.mem_dim = 300, 300
     args.hidden_dim, args.num_classes = 50, 5
     args.cuda = args.cuda and torch.cuda.is_available()
     if args.sparse and args.wd!=0:
@@ -85,7 +85,10 @@ def main():
                 args.cuda, vocab.size(),
                 args.input_dim, args.mem_dim,
                 args.hidden_dim, args.num_classes,
-                args.sparse)
+                args.sparse,
+                args.dropout_prob,
+                args.rhn_depth
+    )
     criterion = nn.KLDivLoss()
     if args.cuda:
         model.cuda(), criterion.cuda()
