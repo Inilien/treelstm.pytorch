@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable as Var
+import mkl
 
 # IMPORT CONSTANTS
 import Constants
@@ -31,6 +32,8 @@ from trainer import Trainer
 def main():
     global args
     args = parse_args()
+
+    mkl.set_num_threads(1)
 
     args.cuda = args.cuda and torch.cuda.is_available()
     if args.sparse and args.wd!=0:
