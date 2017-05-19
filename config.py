@@ -4,7 +4,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch TreeLSTM for Sentence Similarity on Dependency Trees')
     parser.add_argument('--data', default='data/sick/',
                         help='path to dataset')
-    parser.add_argument('--glove', default='data/glove/',
+    parser.add_argument('--glove', default='/data/tmp/glove/',
                         help='directory with GLOVE embeddings')
     parser.add_argument('--batchsize', default=25, type=int,
                         help='batchsize for optimizer updates')
@@ -40,7 +40,7 @@ def parse_args():
     cuda_parser = parser.add_mutually_exclusive_group(required=False)
     cuda_parser.add_argument('--cuda', dest='cuda', action='store_true')
     cuda_parser.add_argument('--no-cuda', dest='cuda', action='store_false')
-    parser.set_defaults(cuda=True)
+    parser.set_defaults(cuda=False)
 
     args = parser.parse_args()
     return args
