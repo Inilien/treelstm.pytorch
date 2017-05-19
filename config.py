@@ -12,12 +12,24 @@ def parse_args():
                         help='number of total epochs to run')
     parser.add_argument('--lr', default=1e-3, type=float,
                         metavar='LR', help='initial learning rate')
-    parser.add_argument('--wd', default=0, type=float,
+    parser.add_argument('--wd', default=1e-4, type=float,
                         help='weight decay (default: 1e-4)')
-    parser.add_argument('--dropout_prob', default=0.25, type=float,
+    parser.add_argument('--dropout_prob', default=0, type=float,
                         help='dropout probability')
-    parser.add_argument('--rhn_depth', default=3, type=int,
+    parser.add_argument('--rhn_depth', default=0, type=int,
         help='number of additional steps in recurrent highway network')
+
+    # dimensions
+    parser.add_argument('--input_dim', type=int, default=300, help="embedding's dimension")
+    parser.add_argument('--mem_dim', type=int, default=150, help="LSTM's hidden state (and cell memory) dimension")
+    parser.add_argument('--hidden_dim', type=int, default=50, help="'Similarity' FC network hidden state dimension")
+    parser.add_argument('--num_classes', type=int, default=5, help="Number of predicted classes")
+
+    parser.add_argument('--cell_m', action='store_true', default=False,
+        help='use cell memory as sentence embedding instead of hidden state')
+    parser.add_argument('--output_gate', action='store_true', default=True,
+        help="use LSTM's output gate if True")
+
     parser.add_argument('--sparse', action='store_true',
                         help='Enable sparsity for embeddings, \
                               incompatible with weight decay')

@@ -6,12 +6,14 @@ import Constants
 
 # module for childsumtreelstm
 class ChildSumTreeLSTM(nn.Module):
-    def __init__(self, cuda, vocab_size, in_dim, mem_dim, sparsity, dropout_prob, rhn_depth):
+    def __init__(self, cuda, vocab_size, in_dim, mem_dim, sparsity, args):
         super(ChildSumTreeLSTM, self).__init__()
         self.cudaFlag = cuda
         self.in_dim = in_dim
         self.mem_dim = mem_dim
-        self.dropout_prob = dropout_prob
+        self.dropout_prob = args.dropout_prob
+
+        self.output_gate = args.output_gate
 
         self.emb = nn.Embedding(vocab_size,in_dim,
                                 padding_idx=Constants.PAD,
@@ -34,11 +36,12 @@ class ChildSumTreeLSTM(nn.Module):
         self.drop_forward_inputs = nn.Dropout(self.dropout_prob)
         self.drop_forward_child_h = nn.Dropout(self.dropout_prob)
         self.drop_recurrent = nn.Dropout(self.dropout_prob)
+        self.drop_rhn = nn.Dropout(self.dropout_prob)
 
         # Recurrent Highway Networks
         # https://arxiv.org/pdf/1607.03474.pdf
 
-        self.h_rhn_list = [nn.Linear(self.mem_dim,self.mem_dim) for i in range(rhn_depth)]
+        self.h_rhn_list = [nn.Linear(self.mem_dim,self.mem_dim) for i in range(args.rhn_depth)]
 
         if self.cudaFlag:
             self.ix = self.ix.cuda()
@@ -56,6 +59,7 @@ class ChildSumTreeLSTM(nn.Module):
             self.drop_forward_inputs = self.drop_forward_inputs.cuda()
             self.drop_forward_child_h = self.drop_forward_child_h.cuda()
             self.drop_recurrent = self.drop_recurrent.cuda()
+            self.drop_rhn = self.drop_rhn.cuda()
 
             self.h_rhn_list = [h_rhn.cuda() for h_rhn in self.h_rhn_list]
 
@@ -80,11 +84,14 @@ class ChildSumTreeLSTM(nn.Module):
         fc = F.torch.squeeze(F.torch.mul(f,child_c),1)
 
         c = F.torch.mul(i,u) + F.torch.sum(fc,0)
-        h = F.torch.mul(o, F.tanh(c))
-        # h = F.tanh(c)  # same logic as in the original paper's source code
+
+        if self.output_gate:
+            h = F.torch.mul(o, F.tanh(c))
+        else:
+            h = F.tanh(c)  # same logic as in the original paper's source code
 
         for h_rhn in self.h_rhn_list:
-            h = h + F.tanh(h_rhn(h))
+            h = h + self.drop_rhn(F.tanh(h_rhn(h)))
 
         return c,h
 
@@ -94,7 +101,7 @@ class ChildSumTreeLSTM(nn.Module):
         for idx in range(tree.num_children):
             _ = self.forward(tree.children[idx], inputs)
         child_c, child_h = self.get_child_states(tree)
-        tree.state = self.node_forward(embs[tree.idx-1], child_c, child_h)
+        tree.state = self.node_forward(embs[tree.idx], child_c, child_h)
         return tree.state
 
     def get_child_states(self, tree):
@@ -136,14 +143,20 @@ class Similarity(nn.Module):
 
 # puttinh the whole model together
 class SimilarityTreeLSTM(nn.Module):
-    def __init__(self, cuda, vocab_size, in_dim, mem_dim, hidden_dim, num_classes, sparsity, dropout_prob, rhn_depth):
+    def __init__(self, cuda, vocab_size, in_dim, mem_dim, hidden_dim, num_classes, sparsity, args):
         super(SimilarityTreeLSTM, self).__init__()
         self.cudaFlag = cuda
-        self.childsumtreelstm = ChildSumTreeLSTM(cuda, vocab_size, in_dim, mem_dim, sparsity, dropout_prob, rhn_depth)
+        self.childsumtreelstm = ChildSumTreeLSTM(cuda, vocab_size, in_dim, mem_dim, sparsity, args)
         self.similarity = Similarity(cuda, mem_dim, hidden_dim, num_classes)
+
+        self.args = args
 
     def forward(self, ltree, linputs, rtree, rinputs):
         lstate, lhidden = self.childsumtreelstm(ltree, linputs)
         rstate, rhidden = self.childsumtreelstm(rtree, rinputs)
-        output = self.similarity(lstate, rstate)
+
+        if self.args.cell_m:
+            output = self.similarity(lstate, rstate)
+        else:
+            output = self.similarity(lhidden, rhidden)
         return output
