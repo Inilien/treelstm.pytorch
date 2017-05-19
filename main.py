@@ -90,12 +90,15 @@ def main():
     criterion = nn.KLDivLoss()
     if args.cuda:
         model.cuda(), criterion.cuda()
+
+    trainable_parameters = [param for param in model.parameters() if param.requires_grad]
+
     if args.optim=='adam':
-        optimizer   = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.Adam(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     elif args.optim=='adagrad':
-        optimizer   = optim.Adagrad(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.Adagrad(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     elif args.optim=='sgd':
-        optimizer   = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.SGD(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     metrics = Metrics(args.num_classes)
 
     # for words common to dataset vocab and GLOVE, use GLOVE vectors
