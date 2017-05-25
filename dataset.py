@@ -3,7 +3,7 @@ from copy import deepcopy
 from tqdm import tqdm
 import torch
 import torch.utils.data as data
-from tree import Tree
+from treenode import TreeNode
 from vocab import Vocab
 import Constants
 
@@ -13,6 +13,9 @@ class SICKDataset(data.Dataset):
         super(SICKDataset, self).__init__()
         self.vocab = vocab
         self.num_classes = num_classes
+
+        self.lsentences_tokens = self.store_sentences(os.path.join(path,'a.toks'))
+        self.rsentences_tokens = self.store_sentences(os.path.join(path, 'b.toks'))
 
         self.lsentences = self.read_sentences(os.path.join(path,'a.toks'))
         self.rsentences = self.read_sentences(os.path.join(path,'b.toks'))
@@ -35,6 +38,13 @@ class SICKDataset(data.Dataset):
         label = deepcopy(self.labels[index])
         return (ltree,lsent,rtree,rsent,label)
 
+    def store_sentences(self, filename):
+        tokens = []
+        with open(filename) as f:
+            for line in f.readlines():
+                tokens.append(line.strip().split())
+        return tokens
+
     def read_sentences(self, filename):
         with open(filename,'r') as f:
             sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
@@ -50,33 +60,33 @@ class SICKDataset(data.Dataset):
         return trees
 
     def read_tree(self, line):
-        parents = list(map(int,line.split()))
-        trees = dict()
+        parents = list(map(lambda x: int(x) - 1,line.split()))
+        tree_nodes = dict()
         root = None
-        for i in range(1,len(parents)+1):
-            #if not trees[i-1] and parents[i-1]!=-1:
-            if i-1 not in trees.keys() and parents[i-1]!=-1:
-                idx = i
-                prev = None
+        for i in range(len(parents)):
+            crnt_node_id = i
+            if crnt_node_id not in tree_nodes.keys():
+                prev_node = None
                 while True:
-                    parent = parents[idx-1]
-                    if parent == -1:
+                    if crnt_node_id == -1:
                         break
-                    tree = Tree()
-                    if prev is not None:
-                        tree.add_child(prev)
-                    trees[idx-1] = tree
-                    tree.idx = idx-1
+                    parent_node_id = parents[crnt_node_id]
+
+                    crnt_node = TreeNode()
+                    if prev_node is not None:
+                        crnt_node.add_child(prev_node)
+                    tree_nodes[crnt_node_id] = crnt_node
+                    crnt_node.idx = crnt_node_id
                     #if trees[parent-1] is not None:
-                    if parent-1 in trees.keys():
-                        trees[parent-1].add_child(tree)
+                    if parent_node_id in tree_nodes.keys():
+                        tree_nodes[parent_node_id].add_child(crnt_node)
                         break
-                    elif parent==0:
-                        root = tree
+                    elif parent_node_id == -1:
+                        root = crnt_node
                         break
                     else:
-                        prev = tree
-                        idx = parent
+                        prev_node = crnt_node
+                        crnt_node_id = parent_node_id
         return root
 
     def read_labels(self, filename):
