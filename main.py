@@ -117,6 +117,8 @@ def main():
         emb = torch.Tensor(vocab.size(),glove_emb.size(1)).normal_(-0.05,0.05)
         # zero out the embeddings for padding and other special words if they are absent in vocab
         for idx, item in enumerate([Constants.PAD_WORD, Constants.UNK_WORD, Constants.BOS_WORD, Constants.EOS_WORD]):
+            # TODO '<s>', '</s>' these tokens present in glove w2v but probably with different meaning.
+            # though they are not currently used
             emb[idx].zero_()
         for word in vocab.labelToIdx.keys():
             if word in glove_vocab.labelToIdx.keys():
