@@ -5,6 +5,9 @@ class TreeNode(object):
         self.num_children = 0
         self.children = list()
 
+        self.idx = None
+        self.token = None
+
         self._size = None
         self._depth = None
 

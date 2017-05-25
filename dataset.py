@@ -33,10 +33,15 @@ class SICKDataset(data.Dataset):
     def __getitem__(self, index):
         ltree = deepcopy(self.ltrees[index])
         rtree = deepcopy(self.rtrees[index])
+        ltokens = deepcopy(self.lsentences_tokens[index])
+        rtokens = deepcopy(self.rsentences_tokens[index])
         lsent = deepcopy(self.lsentences[index])
         rsent = deepcopy(self.rsentences[index])
         label = deepcopy(self.labels[index])
-        return (ltree,lsent,rtree,rsent,label)
+        return (
+            ltree, lsent, ltokens,
+            rtree, rsent, rtokens,
+            label)
 
     def store_sentences(self, filename):
         tokens = []
@@ -54,13 +59,15 @@ class SICKDataset(data.Dataset):
         indices = self.vocab.convertToIdx(line.split(), Constants.UNK_WORD)
         return torch.LongTensor(indices)
 
-    def read_trees(self, filename):
-        with open(filename,'r') as f:
-            trees = [self.read_tree(line) for line in tqdm(f.readlines())]
+    def read_trees(self, parents_filename, tokens_filename):
+        with open(parents_filename,'r') as p_f:
+            with open(tokens_filename, 'r') as t_f:
+                trees = [self.read_tree(p, t) for p, t in tqdm(zip(p_f.readlines(), t_f.readlines()))]
         return trees
 
-    def read_tree(self, line):
-        parents = list(map(lambda x: int(x) - 1,line.split()))
+    def read_tree(self, parent_line, token_line):
+        parents = list(map(lambda x: int(x) - 1,parent_line.split()))
+        tokens = token_line.strip().split()
         tree_nodes = dict()
         root = None
         for i in range(len(parents)):
@@ -77,6 +84,7 @@ class SICKDataset(data.Dataset):
                         crnt_node.add_child(prev_node)
                     tree_nodes[crnt_node_id] = crnt_node
                     crnt_node.idx = crnt_node_id
+                    crnt_node.token = tokens[crnt_node_id]
                     #if trees[parent-1] is not None:
                     if parent_node_id in tree_nodes.keys():
                         tree_nodes[parent_node_id].add_child(crnt_node)
