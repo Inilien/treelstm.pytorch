@@ -8,6 +8,9 @@ import Constants
 class ChildSumTreeLSTM(nn.Module):
     def __init__(self, cuda, vocab_size, in_dim, mem_dim, sparsity, args):
         super(ChildSumTreeLSTM, self).__init__()
+
+        self.args = args
+
         self.cudaFlag = cuda
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -41,8 +44,25 @@ class ChildSumTreeLSTM(nn.Module):
 
         # Recurrent Highway Networks
         # https://arxiv.org/pdf/1607.03474.pdf
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            self.h_rhn_list = [
+                (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
+                for _ in range(args.h_rhn_depth)]
+            for _, gate_linear in self.h_rhn_list:
+                gate_linear.bias.data += self.args.h_rhn_gate_bias
 
-        self.h_rhn_list = [nn.Linear(self.mem_dim,self.mem_dim) for i in range(args.rhn_depth)]
+            self.c_rhn_list = [
+                (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
+                for _ in range(args.c_rhn_depth)]
+            for _, gate_linear in self.c_rhn_list:
+                gate_linear.bias.data += self.args.c_rhn_gate_bias
+
+        elif self.args.rhn_type == "residual":
+            self.h_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.h_rhn_depth)]
+
+            self.c_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.c_rhn_depth)]
 
         if self.cudaFlag:
             self.ix = self.ix.cuda()
@@ -86,13 +106,30 @@ class ChildSumTreeLSTM(nn.Module):
 
         c = F.torch.mul(i,u) + F.torch.sum(fc,0)
 
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            for c_rhn, c_gate_rhn in self.c_rhn_list:
+                c_g = F.sigmoid(c_gate_rhn(c))
+                c = c * c_g + self.drop_rhn(F.tanh(c_rhn(c))) * (1 - c_g)
+        elif self.args.rhn_type == "residual":
+            for c_rhn in self.c_rhn_list:
+                c = c + self.drop_rhn(F.tanh(c_rhn(c)))
+
         if self.output_gate:
             h = F.torch.mul(o, F.tanh(c))
         else:
             h = F.tanh(c)  # same logic as in the original paper's source code
 
-        for h_rhn in self.h_rhn_list:
-            h = h + self.drop_rhn(F.tanh(h_rhn(h)))
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            for h_rhn, h_gate_rhn in self.h_rhn_list:
+                h_g = F.sigmoid(h_gate_rhn(h))
+                h = h * h_g + self.drop_rhn(F.tanh(h_rhn(h))) * (1 - h_g)
+        elif self.args.rhn_type == "residual":
+            for h_rhn in self.h_rhn_list:
+                h = h + self.drop_rhn(F.tanh(h_rhn(h)))
 
         return c,h
 

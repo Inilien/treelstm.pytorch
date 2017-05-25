@@ -20,8 +20,20 @@ def parse_args():
                         help="weight decay (original paper's default: 1e-4)")
     parser.add_argument('--dropout_prob', default=0, type=float,
                         help='dropout probability')
-    parser.add_argument('--rhn_depth', default=0, type=int,
-        help='number of additional steps in recurrent highway network')
+
+    # Recurrent Highway Networks
+    parser.add_argument('--rhn_type', default=None, choices=[None, "gated", 'residual'],
+        help='Type of connections to use for RHN architecture (if any)')
+
+    parser.add_argument('--h_rhn_depth', default=1, type=int,
+        help='number of additional steps in recurrent highway network for h')
+    parser.add_argument('--h_rhn_gate_bias', default=2, type=int,
+        help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
+
+    parser.add_argument('--c_rhn_depth', default=1, type=int,
+        help='number of additional steps in recurrent highway network for c')
+    parser.add_argument('--c_rhn_gate_bias', default=2, type=int,
+        help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
 
     # dimensions
     parser.add_argument('--input_dim', type=int, default=300, help="embedding's dimension")
