@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import os, math
 import torch
-from tree import Tree
 from vocab import Vocab
 
 # loading GLOVE word vectors
@@ -46,7 +45,7 @@ def build_vocab(filenames, vocabfile):
                 tokens = line.rstrip('\n').split(' ')
                 vocab |= set(tokens)
     with open(vocabfile,'w') as f:
-        for token in vocab:
+        for token in sorted(vocab):
             f.write(token+'\n')
 
 # mapping from scalar to vector
