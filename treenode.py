@@ -5,10 +5,16 @@ class TreeNode(object):
         self.num_children = 0
         self.children = list()
 
+        self._size = None
+        self._depth = None
+
     def add_child(self,child):
         child.parent = self
         self.num_children += 1
         self.children.append(child)
+
+        self._size = None
+        self._depth = None
 
     def size(self):
         if getattr(self,'_size'):
