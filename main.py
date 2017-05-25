@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 from __future__ import print_function
 
 import os, time, argparse
@@ -7,13 +8,14 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable as Var
+import mkl
 
 # IMPORT CONSTANTS
 import Constants
 # NEURAL NETWORK MODULES/LAYERS
 from model import *
 # DATA HANDLING CLASSES
-from tree import Tree
+from treenode import TreeNode
 from vocab import Vocab
 # DATASET CLASS FOR SICK DATASET
 from dataset import SICKDataset
@@ -30,8 +32,9 @@ from trainer import Trainer
 def main():
     global args
     args = parse_args()
-    args.input_dim, args.mem_dim = 300, 150
-    args.hidden_dim, args.num_classes = 50, 5
+
+    mkl.set_num_threads(1)
+
     args.cuda = args.cuda and torch.cuda.is_available()
     if args.sparse and args.wd!=0:
         print('Sparsity and weight decay are incompatible, pick one!')
@@ -81,19 +84,25 @@ def main():
 
     # initialize model, criterion/loss_function, optimizer
     model = SimilarityTreeLSTM(
+            args.encoder_type,
                 args.cuda, vocab.size(),
                 args.input_dim, args.mem_dim,
                 args.hidden_dim, args.num_classes,
-                args.sparse)
+                args.sparse,
+                args
+    )
     criterion = nn.KLDivLoss()
     if args.cuda:
         model.cuda(), criterion.cuda()
+
+    trainable_parameters = [param for param in model.parameters() if param.requires_grad]
+
     if args.optim=='adam':
-        optimizer   = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.Adam(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     elif args.optim=='adagrad':
-        optimizer   = optim.Adagrad(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.Adagrad(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     elif args.optim=='sgd':
-        optimizer   = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd)
+        optimizer   = optim.SGD(trainable_parameters, lr=args.lr, weight_decay=args.wd)
     metrics = Metrics(args.num_classes)
 
     # for words common to dataset vocab and GLOVE, use GLOVE vectors
@@ -108,15 +117,17 @@ def main():
         emb = torch.Tensor(vocab.size(),glove_emb.size(1)).normal_(-0.05,0.05)
         # zero out the embeddings for padding and other special words if they are absent in vocab
         for idx, item in enumerate([Constants.PAD_WORD, Constants.UNK_WORD, Constants.BOS_WORD, Constants.EOS_WORD]):
+            # TODO '<s>', '</s>' these tokens present in glove w2v but probably with different meaning.
+            # though they are not currently used
             emb[idx].zero_()
         for word in vocab.labelToIdx.keys():
-            if glove_vocab.getIndex(word):
+            if word in glove_vocab.labelToIdx.keys():
                 emb[vocab.getIndex(word)] = glove_emb[glove_vocab.getIndex(word)]
         torch.save(emb, emb_file)
     # plug these into embedding matrix inside model
     if args.cuda:
         emb = emb.cuda()
-    model.childsumtreelstm.emb.state_dict()['weight'].copy_(emb)
+    model.encoder.emb.state_dict()['weight'].copy_(emb)
 
     # create trainer object for training and testing
     trainer     = Trainer(args, model, criterion, optimizer)

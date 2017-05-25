@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import os, math
 import torch
-from tree import Tree
 from vocab import Vocab
 
 # loading GLOVE word vectors
@@ -28,7 +27,7 @@ def load_word_vectors(path):
         for line in f:
             contents = line.rstrip('\n').split(' ')
             words[idx] = contents[0]
-            vectors[idx] = torch.Tensor(map(float, contents[1:]))
+            vectors[idx] = torch.Tensor(list(map(float, contents[1:])))
             idx += 1
     with open(path+'.vocab','w') as f:
         for word in words:
@@ -46,12 +45,12 @@ def build_vocab(filenames, vocabfile):
                 tokens = line.rstrip('\n').split(' ')
                 vocab |= set(tokens)
     with open(vocabfile,'w') as f:
-        for token in vocab:
+        for token in sorted(vocab):
             f.write(token+'\n')
 
 # mapping from scalar to vector
 def map_label_to_target(label,num_classes):
-    target = torch.Tensor(1,num_classes)
+    target = torch.Tensor(1,num_classes).zero_()
     ceil = int(math.ceil(label))
     floor = int(math.floor(label))
     if ceil==floor:
