@@ -1,14 +1,23 @@
 # tree object from stanfordnlp/treelstm
-class Tree(object):
+class TreeNode(object):
     def __init__(self):
         self.parent = None
         self.num_children = 0
         self.children = list()
 
+        self.idx = None
+        self.token = None
+
+        self._size = None
+        self._depth = None
+
     def add_child(self,child):
         child.parent = self
         self.num_children += 1
         self.children.append(child)
+
+        self._size = None
+        self._depth = None
 
     def size(self):
         if getattr(self,'_size'):

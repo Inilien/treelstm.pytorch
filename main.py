@@ -15,7 +15,7 @@ import Constants
 # NEURAL NETWORK MODULES/LAYERS
 from model import *
 # DATA HANDLING CLASSES
-from tree import Tree
+from treenode import TreeNode
 from vocab import Vocab
 # DATASET CLASS FOR SICK DATASET
 from dataset import SICKDataset
@@ -84,6 +84,7 @@ def main():
 
     # initialize model, criterion/loss_function, optimizer
     model = SimilarityTreeLSTM(
+            args.encoder_type,
                 args.cuda, vocab.size(),
                 args.input_dim, args.mem_dim,
                 args.hidden_dim, args.num_classes,
@@ -116,15 +117,17 @@ def main():
         emb = torch.Tensor(vocab.size(),glove_emb.size(1)).normal_(-0.05,0.05)
         # zero out the embeddings for padding and other special words if they are absent in vocab
         for idx, item in enumerate([Constants.PAD_WORD, Constants.UNK_WORD, Constants.BOS_WORD, Constants.EOS_WORD]):
+            # TODO '<s>', '</s>' these tokens present in glove w2v but probably with different meaning.
+            # though they are not currently used
             emb[idx].zero_()
         for word in vocab.labelToIdx.keys():
-            if glove_vocab.getIndex(word):
+            if word in glove_vocab.labelToIdx.keys():
                 emb[vocab.getIndex(word)] = glove_emb[glove_vocab.getIndex(word)]
         torch.save(emb, emb_file)
     # plug these into embedding matrix inside model
     if args.cuda:
         emb = emb.cuda()
-    model.childsumtreelstm.emb.state_dict()['weight'].copy_(emb)
+    model.encoder.emb.state_dict()['weight'].copy_(emb)
 
     # create trainer object for training and testing
     trainer     = Trainer(args, model, criterion, optimizer)

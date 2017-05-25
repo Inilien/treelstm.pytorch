@@ -8,6 +8,9 @@ import Constants
 class ChildSumTreeLSTM(nn.Module):
     def __init__(self, cuda, vocab_size, in_dim, mem_dim, sparsity, args):
         super(ChildSumTreeLSTM, self).__init__()
+
+        self.args = args
+
         self.cudaFlag = cuda
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -41,8 +44,25 @@ class ChildSumTreeLSTM(nn.Module):
 
         # Recurrent Highway Networks
         # https://arxiv.org/pdf/1607.03474.pdf
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            self.h_rhn_list = [
+                (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
+                for _ in range(args.h_rhn_depth)]
+            for _, gate_linear in self.h_rhn_list:
+                gate_linear.bias.data += self.args.h_rhn_gate_bias
 
-        self.h_rhn_list = [nn.Linear(self.mem_dim,self.mem_dim) for i in range(args.rhn_depth)]
+            self.c_rhn_list = [
+                (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
+                for _ in range(args.c_rhn_depth)]
+            for _, gate_linear in self.c_rhn_list:
+                gate_linear.bias.data += self.args.c_rhn_gate_bias
+
+        elif self.args.rhn_type == "residual":
+            self.h_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.h_rhn_depth)]
+
+            self.c_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.c_rhn_depth)]
 
         if self.cudaFlag:
             self.ix = self.ix.cuda()
@@ -86,40 +106,57 @@ class ChildSumTreeLSTM(nn.Module):
 
         c = F.torch.mul(i,u) + F.torch.sum(fc,0)
 
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            for c_rhn, c_gate_rhn in self.c_rhn_list:
+                c_g = F.sigmoid(c_gate_rhn(c))
+                c = c * c_g + self.drop_rhn(F.tanh(c_rhn(c))) * (1 - c_g)
+        elif self.args.rhn_type == "residual":
+            for c_rhn in self.c_rhn_list:
+                c = c + self.drop_rhn(F.tanh(c_rhn(c)))
+
         if self.output_gate:
             h = F.torch.mul(o, F.tanh(c))
         else:
             h = F.tanh(c)  # same logic as in the original paper's source code
 
-        for h_rhn in self.h_rhn_list:
-            h = h + self.drop_rhn(F.tanh(h_rhn(h)))
+        if self.args.rhn_type is None:
+            pass
+        elif self.args.rhn_type == "gated":
+            for h_rhn, h_gate_rhn in self.h_rhn_list:
+                h_g = F.sigmoid(h_gate_rhn(h))
+                h = h * h_g + self.drop_rhn(F.tanh(h_rhn(h))) * (1 - h_g)
+        elif self.args.rhn_type == "residual":
+            for h_rhn in self.h_rhn_list:
+                h = h + self.drop_rhn(F.tanh(h_rhn(h)))
 
         return c,h
 
-    def forward(self, tree, inputs):
+    def forward(self, tree_node, inputs):
         # add singleton dimension for future call to node_forward
         embs = F.torch.unsqueeze(self.emb(inputs),1)
-        for idx in range(tree.num_children):
-            _ = self.forward(tree.children[idx], inputs)
-        child_c, child_h = self.get_child_states(tree)
-        tree.state = self.node_forward(embs[tree.idx], child_c, child_h)
-        return tree.state
+        for idx in range(tree_node.num_children):
+            _ = self.forward(tree_node.children[idx], inputs)
+        child_c, child_h = self.get_child_states(tree_node)
+        tree_node.state = self.node_forward(embs[tree_node.idx], child_c, child_h)
+        return tree_node.state
 
-    def get_child_states(self, tree):
+    def get_child_states(self, tree_node):
         # add extra singleton dimension in middle...
         # because pytorch needs mini batches... :sad:
-        if tree.num_children==0:
+        if tree_node.num_children==0:
             child_c = Var(torch.zeros(1,1,self.mem_dim))
             child_h = Var(torch.zeros(1,1,self.mem_dim))
             if self.cudaFlag:
                 child_c, child_h = child_c.cuda(), child_h.cuda()
         else:
-            child_c = Var(torch.Tensor(tree.num_children,1,self.mem_dim))
-            child_h = Var(torch.Tensor(tree.num_children,1,self.mem_dim))
+            child_c = Var(torch.Tensor(tree_node.num_children,1,self.mem_dim))
+            child_h = Var(torch.Tensor(tree_node.num_children,1,self.mem_dim))
             if self.cudaFlag:
                 child_c, child_h = child_c.cuda(), child_h.cuda()
-            for idx in range(tree.num_children):
-                child_c[idx], child_h[idx] = tree.children[idx].state
+            for idx in range(tree_node.num_children):
+                child_c[idx], child_h[idx] = tree_node.children[idx].state
         return child_c, child_h
 
 # module for distance-angle similarity
@@ -144,20 +181,68 @@ class Similarity(nn.Module):
 
 # puttinh the whole model together
 class SimilarityTreeLSTM(nn.Module):
-    def __init__(self, cuda, vocab_size, in_dim, mem_dim, hidden_dim, num_classes, sparsity, args):
+    def __init__(self, encoder_type, cuda, vocab_size, in_dim, mem_dim, hidden_dim, num_classes, sparsity, args):
         super(SimilarityTreeLSTM, self).__init__()
         self.cudaFlag = cuda
-        self.childsumtreelstm = ChildSumTreeLSTM(cuda, vocab_size, in_dim, mem_dim, sparsity, args)
+
+        self.encoder_type = encoder_type
+
+        if self.encoder_type == "TreeLSTM":
+            self.encoder = ChildSumTreeLSTM(cuda, vocab_size, in_dim, mem_dim, sparsity, args)
+        elif self.encoder_type == "LSTM":
+            self.encoder = LSTMEncoder(cuda, vocab_size, in_dim, mem_dim, sparsity, args)
+        else:
+            raise NotImplementedError()
+
         self.similarity = Similarity(cuda, mem_dim, hidden_dim, num_classes)
 
         self.args = args
 
     def forward(self, ltree, linputs, rtree, rinputs):
-        lstate, lhidden = self.childsumtreelstm(ltree, linputs)
-        rstate, rhidden = self.childsumtreelstm(rtree, rinputs)
+        lstate, lhidden = self.encoder(ltree, linputs)
+        rstate, rhidden = self.encoder(rtree, rinputs)
 
         if self.args.cell_m:
             output = self.similarity(lstate, rstate)
         else:
             output = self.similarity(lhidden, rhidden)
         return output
+
+
+class LSTMEncoder(nn.Module):
+    # def __init__(self, ntoken, emb_size, lstm_hid, lstm_num_layers, sim_hid, dropout_prob=0, w2v_embeddings=None):
+    def __init__(self, cuda, vocab_size, in_dim, mem_dim, sparsity, args):
+        super().__init__()
+        self.drop = nn.Dropout(args.dropout_prob)
+
+        self.emb = nn.Embedding(vocab_size, in_dim,
+                                padding_idx=Constants.PAD,
+                                sparse=sparsity)
+        self.emb.weight.requires_grad = False
+
+        self.rnn = nn.LSTM(in_dim, mem_dim, 1, dropout=args.dropout_prob)
+
+        self.mem_dim = mem_dim
+
+    def forward(self, tree, inputs):
+        embs = F.torch.unsqueeze(self.emb(inputs), 1)
+
+        start_hidden = self.init_hidden(bsz=1)
+
+        _, (end_cell_m, end_hidden) = self.rnn(embs, start_hidden)
+
+        num_layers = end_cell_m.size()[0]
+
+        out_cell_m = end_cell_m[num_layers - 1, :, :]
+        out_hidden = end_hidden[num_layers - 1, :, :]
+
+        return out_cell_m, out_hidden
+
+    def init_hidden(self, bsz):
+        # print("WARNING: what is this code string doing?")
+        weight = next(self.parameters()).data
+        return (
+            Var(weight.new(1, 1, self.mem_dim).zero_()),
+            Var(weight.new(1, 1, self.mem_dim).zero_()))
+
+
