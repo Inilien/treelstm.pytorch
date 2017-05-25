@@ -1,5 +1,5 @@
 # tree object from stanfordnlp/treelstm
-class Tree(object):
+class TreeNode(object):
     def __init__(self):
         self.parent = None
         self.num_children = 0
