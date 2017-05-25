@@ -16,8 +16,8 @@ def parse_args():
                         help='number of total epochs to run')
     parser.add_argument('--lr', default=1e-3, type=float,
                         metavar='LR', help='initial learning rate')
-    parser.add_argument('--wd', default=1e-4, type=float,
-                        help='weight decay (default: 1e-4)')
+    parser.add_argument('--wd', default=0, type=float,
+                        help="weight decay (original paper's default: 1e-4)")
     parser.add_argument('--dropout_prob', default=0, type=float,
                         help='dropout probability')
     parser.add_argument('--rhn_depth', default=0, type=int,
