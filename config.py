@@ -6,6 +6,10 @@ def parse_args():
                         help='path to dataset')
     parser.add_argument('--glove', default='/data/tmp/glove/',
                         help='directory with GLOVE embeddings')
+
+    parser.add_argument('--encoder_type', default="TreeLSTM", choices=["TreeLSTM", "LSTM"],
+        help='model type to use as sentence encoder')
+
     parser.add_argument('--batchsize', default=25, type=int,
                         help='batchsize for optimizer updates')
     parser.add_argument('--epochs', default=30, type=int,
