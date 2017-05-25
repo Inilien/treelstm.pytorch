@@ -14,14 +14,16 @@ class SICKDataset(data.Dataset):
         self.vocab = vocab
         self.num_classes = num_classes
 
-        self.lsentences_tokens = self.store_sentences(os.path.join(path,'a.toks'))
-        self.rsentences_tokens = self.store_sentences(os.path.join(path, 'b.toks'))
+        a_toks_file = os.path.join(path,'a.toks')
+        b_toks_file = os.path.join(path, 'b.toks')
+        self.lsentences_tokens = self.store_sentences(a_toks_file)
+        self.rsentences_tokens = self.store_sentences(b_toks_file)
 
-        self.lsentences = self.read_sentences(os.path.join(path,'a.toks'))
-        self.rsentences = self.read_sentences(os.path.join(path,'b.toks'))
+        self.lsentences = self.read_sentences(a_toks_file)
+        self.rsentences = self.read_sentences(b_toks_file)
 
-        self.ltrees = self.read_trees(os.path.join(path,'a.parents'))
-        self.rtrees = self.read_trees(os.path.join(path,'b.parents'))
+        self.ltrees = self.read_trees(os.path.join(path,'a.parents'), a_toks_file)
+        self.rtrees = self.read_trees(os.path.join(path,'b.parents'), b_toks_file)
 
         self.labels = self.read_labels(os.path.join(path,'sim.txt'))
 
