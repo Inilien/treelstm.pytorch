@@ -24,7 +24,7 @@ The preprocessing script also generates dependency parses of the SICK dataset us
 [Stanford Neural Network Dependency Parser](http://nlp.stanford.edu/software/nndep.shtml).
 
 To try the Dependency Tree-LSTM from the paper to predict similarity for pairs of sentences on the SICK dataset, 
-run `python main.py` to train and test the model, and have a look at `config.py` for command-line arguments.
+run `python main.py` to train and test the model, and have a look at `config.py` for command-line arguments.  
 **Note:** You may want to change default folder in which GLOVE vectors are expected by the model specifying the path
   `--glove "data/glove"` 
 
