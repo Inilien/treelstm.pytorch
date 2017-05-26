@@ -9,6 +9,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable as Var
 import mkl
+import numpy as np
+import random
 
 # IMPORT CONSTANTS
 import Constants
@@ -43,6 +45,8 @@ def main():
     torch.manual_seed(args.seed)
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     train_dir = os.path.join(args.data,'train/')
     dev_dir = os.path.join(args.data,'dev/')
@@ -166,8 +170,6 @@ def print_results(dataset_name, loss, pearson_stats, mse_stats):
 
 
 def get_median_and_confidence_interval(predictions, targets, metric_functions_list, bootstrap_size = 2000):
-    import numpy as np
-
     metric_statistics = np.ndarray([len(metric_functions_list), bootstrap_size])
 
     num_of_samples = predictions.size()[0]
