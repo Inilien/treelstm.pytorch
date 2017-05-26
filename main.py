@@ -165,7 +165,7 @@ def print_results(dataset_name, loss, pearson_stats, mse_stats):
     print('{} MSE        : {:.6} ({:.6}) \t'.format(dataset_name, mse_median, mse_iqr), end="\n")
 
 
-def get_median_and_confidence_interval(predictions, targets, metric_functions_list, bootstrap_size = 100):
+def get_median_and_confidence_interval(predictions, targets, metric_functions_list, bootstrap_size = 2000):
     import numpy as np
 
     metric_statistics = np.ndarray([len(metric_functions_list), bootstrap_size])
