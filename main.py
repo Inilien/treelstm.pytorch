@@ -132,21 +132,56 @@ def main():
     # create trainer object for training and testing
     trainer     = Trainer(args, model, criterion, optimizer)
 
+    metric_functions = [metrics.pearson, metrics.mse]
+
     for epoch in range(args.epochs):
         train_loss             = trainer.train(train_dataset)
         train_loss, train_pred = trainer.test(train_dataset)
         dev_loss, dev_pred     = trainer.test(dev_dataset)
         test_loss, test_pred   = trainer.test(test_dataset)
 
-        print('==> Train loss   : %f \t' % train_loss, end="")
-        print('Train Pearson    : %f \t' % metrics.pearson(train_pred,train_dataset.labels), end="")
-        print('Train MSE        : %f \t' % metrics.mse(train_pred,train_dataset.labels), end="\n")
-        print('==> Dev loss     : %f \t' % dev_loss, end="")
-        print('Dev Pearson      : %f \t' % metrics.pearson(dev_pred,dev_dataset.labels), end="")
-        print('Dev MSE          : %f \t' % metrics.mse(dev_pred,dev_dataset.labels), end="\n")
-        print('==> Test loss    : %f \t' % test_loss, end="")
-        print('Test Pearson     : %f \t' % metrics.pearson(test_pred,test_dataset.labels), end="")
-        print('Test MSE         : %f \t' % metrics.mse(test_pred,test_dataset.labels), end="\n")
+        pearson_stats, mse_stats = get_median_and_confidence_interval(
+            train_pred, train_dataset.labels, metric_functions)
+        print_results("Train", train_loss, pearson_stats, mse_stats)
+
+        pearson_stats, mse_stats = get_median_and_confidence_interval(
+            dev_pred, dev_dataset.labels, metric_functions)
+        print_results("Dev", dev_loss, pearson_stats, mse_stats)
+
+        pearson_stats, mse_stats = get_median_and_confidence_interval(
+            test_pred, test_dataset.labels, metric_functions)
+        print_results("Test", test_loss, pearson_stats, mse_stats)
+
+
+def print_results(dataset_name, loss, pearson_stats, mse_stats):
+    pearson_median = pearson_stats[1]
+    pearson_iqr = pearson_stats[2] - pearson_stats[0]
+
+    mse_median = mse_stats[1]
+    mse_iqr = mse_stats[2] - mse_stats[0]
+
+    print('==> {} loss   : {:.6} \t'.format(dataset_name, loss), end="")
+    print('{} Pearson    : {:.6} ({:.6}) \t'.format(dataset_name, pearson_median, pearson_iqr), end="")
+    print('{} MSE        : {:.6} ({:.6}) \t'.format(dataset_name, mse_median, mse_iqr), end="\n")
+
+
+def get_median_and_confidence_interval(predictions, targets, metric_functions_list, bootstrap_size = 100):
+    import numpy as np
+
+    metric_statistics = np.ndarray([len(metric_functions_list), bootstrap_size])
+
+    num_of_samples = predictions.size()[0]
+    for bs_i in range(bootstrap_size):
+        bs_ids = torch.LongTensor(np.random.choice(range(num_of_samples), num_of_samples))
+        bs_predictions = predictions[bs_ids]
+        bs_targets = targets[bs_ids]
+        for m_i, m_func in enumerate(metric_functions_list):
+            metric_statistics[m_i, bs_i] = m_func(bs_predictions, bs_targets)
+
+    metric_statistics = np.percentile(metric_statistics, [25, 50, 75], axis=1).transpose()
+
+    return metric_statistics
+
 
 if __name__ == "__main__":
     main()
