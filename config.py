@@ -27,12 +27,12 @@ def parse_args():
 
     parser.add_argument('--h_rhn_depth', default=0, type=int,
         help='number of additional steps in recurrent highway network for h')
-    parser.add_argument('--h_rhn_gate_bias', default=2, type=int,
+    parser.add_argument('--h_rhn_gate_bias', default=3, type=int,
         help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
 
     parser.add_argument('--c_rhn_depth', default=0, type=int,
         help='number of additional steps in recurrent highway network for c')
-    parser.add_argument('--c_rhn_gate_bias', default=2, type=int,
+    parser.add_argument('--c_rhn_gate_bias', default=3, type=int,
         help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
 
     # dimensions
