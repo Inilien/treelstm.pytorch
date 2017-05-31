@@ -59,10 +59,18 @@ class ChildSumTreeLSTM(nn.Module):
             for _, gate_linear in self.c_rhn_list:
                 gate_linear.bias.data += self.args.c_rhn_gate_bias
 
+            self.u_rhn_list = [
+                (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
+                for _ in range(args.u_rhn_depth)]
+            for _, gate_linear in self.u_rhn_list:
+                gate_linear.bias.data += self.args.u_rhn_gate_bias
+
         elif self.args.rhn_type == "residual":
             self.h_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.h_rhn_depth)]
 
             self.c_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.c_rhn_depth)]
+
+            self.u_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.u_rhn_depth)]
 
         if self.args.rhn_type is not None and args.h_rhn_depth == args.c_rhn_depth == 0:
             raise Exception("You should specify at least one type of rhn depth greater then 0")
@@ -107,34 +115,35 @@ class ChildSumTreeLSTM(nn.Module):
         f = F.torch.unsqueeze(f,1)
         fc = F.torch.squeeze(F.torch.mul(f,child_c),1)
 
+        u = self.rhn(u, self.u_rhn_list)
+
         c = F.torch.mul(i,u) + F.torch.sum(fc,0)
 
-        if self.args.rhn_type is None:
-            pass
-        elif self.args.rhn_type == "gated":
-            for c_rhn, c_gate_rhn in self.c_rhn_list:
-                c_g = F.sigmoid(c_gate_rhn(c))
-                c = c * c_g + self.drop_rhn(F.tanh(c_rhn(c))) * (1 - c_g)
-        elif self.args.rhn_type == "residual":
-            for c_rhn in self.c_rhn_list:
-                c = c + self.drop_rhn(F.tanh(c_rhn(c)))
+        c = self.rhn(c, self.c_rhn_list)
 
         if self.output_gate:
             h = F.torch.mul(o, F.tanh(c))
         else:
             h = F.tanh(c)  # same logic as in the original paper's source code
 
+        h = self.rhn(h, self.h_rhn_list)
+
+        return c,h
+
+    def rhn(self, vector, rhn_list):
         if self.args.rhn_type is None:
             pass
         elif self.args.rhn_type == "gated":
-            for h_rhn, h_gate_rhn in self.h_rhn_list:
-                h_g = F.sigmoid(h_gate_rhn(h))
-                h = h * h_g + self.drop_rhn(F.tanh(h_rhn(h))) * (1 - h_g)
+            for transform_linear, gate_linear in rhn_list:
+                gate = F.sigmoid(gate_linear(vector))
+                transform = F.tanh(transform_linear(vector))
+                vector = vector * gate + self.drop_rhn(transform) * (1 - gate)
         elif self.args.rhn_type == "residual":
-            for h_rhn in self.h_rhn_list:
-                h = h + self.drop_rhn(F.tanh(h_rhn(h)))
+            for transform_linear in rhn_list:
+                transform = F.tanh(transform_linear(vector))
+                vector = vector + self.drop_rhn(transform)
 
-        return c,h
+        return vector
 
     def forward(self, tree_node, inputs):
         # add singleton dimension for future call to node_forward

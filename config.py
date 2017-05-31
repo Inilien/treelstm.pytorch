@@ -35,6 +35,11 @@ def parse_args():
     parser.add_argument('--c_rhn_gate_bias', default=3, type=int,
         help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
 
+    parser.add_argument('--u_rhn_depth', default=0, type=int,
+        help='number of additional steps in recurrent highway network for c')
+    parser.add_argument('--u_rhn_gate_bias', default=3, type=int,
+        help='Initial bias for gate in RHN. 2 = start almoust without usage of RHN')
+
     # dimensions
     parser.add_argument('--input_dim', type=int, default=300, help="embedding's dimension")
     parser.add_argument('--mem_dim', type=int, default=150, help="LSTM's hidden state (and cell memory) dimension")
