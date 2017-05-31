@@ -72,7 +72,7 @@ class ChildSumTreeLSTM(nn.Module):
 
             self.u_rhn_list = [nn.Linear(self.mem_dim, self.mem_dim) for _ in range(args.u_rhn_depth)]
 
-        if self.args.rhn_type is not None and args.h_rhn_depth == args.c_rhn_depth == 0:
+        if self.args.rhn_type is not None and args.h_rhn_depth == args.c_rhn_depth == args.u_rhn_depth == 0:
             raise Exception("You should specify at least one type of rhn depth greater then 0")
 
         if self.cudaFlag:
