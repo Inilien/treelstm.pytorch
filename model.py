@@ -45,7 +45,7 @@ class ChildSumTreeLSTM(nn.Module):
         # Recurrent Highway Networks
         # https://arxiv.org/pdf/1607.03474.pdf
         if self.args.rhn_type is None:
-            pass
+            self.h_rhn_list = self.c_rhn_list = self.u_rhn_list = None
         elif self.args.rhn_type == "gated":
             self.h_rhn_list = [
                 (nn.Linear(self.mem_dim, self.mem_dim), nn.Linear(self.mem_dim, self.mem_dim))
