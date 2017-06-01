@@ -12,6 +12,8 @@ import mkl
 import numpy as np
 import random
 
+import torch.multiprocessing as mp
+
 # IMPORT CONSTANTS
 import Constants
 # NEURAL NETWORK MODULES/LAYERS
@@ -29,10 +31,23 @@ from utils import load_word_vectors, build_vocab
 from config import parse_args
 # TRAIN AND TEST HELPER FUNCTIONS
 from trainer import Trainer
+from utils import map_label_to_target
 
 # MAIN BLOCK
 def main():
     global args
+
+    # use global variables to make them available for subprocesses after fork (Unix system assumed)
+    global train_dataset
+    global dev_dataset
+    global test_dataset
+
+    global model
+    global grad_locks
+    global grad_memory
+    global optimizer
+    global criterion
+
     args = parse_args()
 
     mkl.set_num_threads(1)
@@ -86,6 +101,8 @@ def main():
         torch.save(test_dataset, test_file)
     print('==> Size of test data    : %d ' % len(test_dataset))
 
+    data = {"train": train_dataset, "dev": dev_dataset, "test": test_dataset}
+
     # initialize model, criterion/loss_function, optimizer
     model = SimilarityTreeLSTM(
             args.encoder_type,
@@ -133,28 +150,102 @@ def main():
         emb = emb.cuda()
     model.encoder.emb.state_dict()['weight'].copy_(emb)
 
-    # create trainer object for training and testing
-    trainer     = Trainer(args, model, criterion, optimizer)
+    model.share_memory() # gradients are allocated lazily, so they are not shared here
 
-    metric_functions = [metrics.pearson, metrics.mse]
+    # create shared space to store gradient updates
+    grad_memory = dict(
+        (name, torch.FloatTensor(*param.size())) for name, param in model.named_parameters() if param.requires_grad)
+    for tensor in grad_memory.values():
+        tensor.share_memory_()
 
-    for epoch in range(args.epochs):
-        train_loss             = trainer.train(train_dataset)
-        train_loss, train_pred = trainer.test(train_dataset)
-        dev_loss, dev_pred     = trainer.test(dev_dataset)
-        test_loss, test_pred   = trainer.test(test_dataset)
+    # locks will ensure only one process changes gradient values at a time
+    grad_locks = dict((name, mp.Lock()) for name in grad_memory)
 
-        pearson_stats, mse_stats = get_median_and_confidence_interval(
-            train_pred, train_dataset.labels, metric_functions)
-        print_results("Train", train_loss, pearson_stats, mse_stats)
+    # now all subprocesses will have their own copies of model and optimizer with their current states:
+    # model has shared weights but do not have any gradient variables (have Nones)
+    # optimizer have pointers to those variables(Parameters) of the model
+    with mp.Pool() as pool:
 
-        pearson_stats, mse_stats = get_median_and_confidence_interval(
-            dev_pred, dev_dataset.labels, metric_functions)
-        print_results("Dev", dev_loss, pearson_stats, mse_stats)
+        # create trainer object for training and testing
+        trainer = Trainer(args, model, criterion, optimizer, pool, train_sample, test_sample, data)
 
-        pearson_stats, mse_stats = get_median_and_confidence_interval(
-            test_pred, test_dataset.labels, metric_functions)
-        print_results("Test", test_loss, pearson_stats, mse_stats)
+        metric_functions = [metrics.pearson, metrics.mse]
+
+        # init gradients of main process's model here to be able to rewrite underlying data in next section of code.
+        # Parameters of subprocesses's models still do not have any gradients (since fork already have been made)
+        train_sample(0)
+
+        # replace parameters' gradients of the main process's model with new memory location which was shared earlier
+        for name, parameter in model.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            parameter.grad.data = grad_memory[name]
+
+        for epoch_id in range(args.epochs):
+            trainer.train(epoch_id)
+            train_loss, train_pred = trainer.test("train", epoch_id)
+            dev_loss, dev_pred     = trainer.test("dev", epoch_id)
+            test_loss, test_pred   = trainer.test("test", epoch_id)
+
+            pearson_stats, mse_stats = get_median_and_confidence_interval(
+                train_pred, train_dataset.labels, metric_functions)
+            print_results("Train", train_loss, pearson_stats, mse_stats)
+
+            pearson_stats, mse_stats = get_median_and_confidence_interval(
+                dev_pred, dev_dataset.labels, metric_functions)
+            print_results("Dev", dev_loss, pearson_stats, mse_stats)
+
+            pearson_stats, mse_stats = get_median_and_confidence_interval(
+                test_pred, test_dataset.labels, metric_functions)
+            print_results("Test", test_loss, pearson_stats, mse_stats)
+
+def train_sample(sample_id):
+    global args
+
+    global train_dataset
+
+    global model
+    global grad_locks
+    global grad_memory
+    global optimizer
+    global criterion
+
+    # ensure that model in this subprocess is in train mode
+    model.train()
+
+    # zero gradiets of subprocess's model before computing new ones
+    # this will not affect main process's gradients
+    optimizer.zero_grad()
+
+    # make a forward pass for the single sample
+    ltree, lsent, ltokens, rtree, rsent, rtokens, label = train_dataset[sample_id]
+    linput, rinput = Var(lsent), Var(rsent)
+    target = Var(map_label_to_target(label, train_dataset.num_classes))
+    if args.cuda:
+        linput, rinput = linput.cuda(), rinput.cuda()
+        target = target.cuda()
+    output = model(ltree, linput, rtree, rinput)
+    err = criterion(output, target)
+
+    # compute gradients for subprocess's model
+    err.backward()
+
+    # update gradients of main process's model
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+
+        lock = grad_locks[name]
+        lock.acquire()
+        try:
+            grad_memory[name] += parameter.grad.data
+        finally:
+            lock.release()
+
+
+def test_sample():
+    pass
+
 
 
 def print_results(dataset_name, loss, pearson_stats, mse_stats):
