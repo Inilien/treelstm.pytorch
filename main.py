@@ -164,7 +164,7 @@ def main():
     # now all subprocesses will have their own copies of model and optimizer with their current states:
     # model has shared weights but do not have any gradient variables (have Nones)
     # optimizer have pointers to those variables(Parameters) of the model
-    with mp.Pool() as pool:
+    with mp.Pool(processes=min(os.cpu_count(), args.batchsize)) as pool:
 
         # create trainer object for training and testing
         trainer = Trainer(args, model, criterion, optimizer, pool, train_sample, test_sample, data)
