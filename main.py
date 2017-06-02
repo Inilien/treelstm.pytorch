@@ -38,9 +38,8 @@ def main():
     global args
 
     # use global variables to make them available for subprocesses after fork (Unix system assumed)
-    global train_dataset
-    global dev_dataset
-    global test_dataset
+    global data
+    global prediction_storage
 
     global model
     global grad_locks
@@ -102,6 +101,7 @@ def main():
     print('==> Size of test data    : %d ' % len(test_dataset))
 
     data = {"train": train_dataset, "dev": dev_dataset, "test": test_dataset}
+    prediction_storage = dict((name, torch.FloatTensor(len(dataset))) for name, dataset in data.items())
 
     # initialize model, criterion/loss_function, optimizer
     model = SimilarityTreeLSTM(
@@ -161,13 +161,18 @@ def main():
     # locks will ensure only one process changes gradient values at a time
     grad_locks = dict((name, mp.Lock()) for name in grad_memory)
 
+    # share predictions space among processes for test stage
+    [pred.share_memory_() for pred in prediction_storage.values()]
+
     # now all subprocesses will have their own copies of model and optimizer with their current states:
     # model has shared weights but do not have any gradient variables (have Nones)
     # optimizer have pointers to those variables(Parameters) of the model
-    with mp.Pool(processes=min(os.cpu_count(), args.batchsize)) as pool:
+    pool_size = min(os.cpu_count(), args.batchsize)
+    with mp.Pool(processes=pool_size) as pool:
 
         # create trainer object for training and testing
-        trainer = Trainer(args, model, criterion, optimizer, pool, train_sample, test_sample, data)
+        trainer = Trainer(
+            args, model, criterion, optimizer, pool, pool_size, train_sample, test_sample, data, prediction_storage)
 
         metric_functions = [metrics.pearson, metrics.mse]
 
@@ -202,13 +207,15 @@ def main():
 def train_sample(sample_id):
     global args
 
-    global train_dataset
+    global data
 
     global model
     global grad_locks
     global grad_memory
     global optimizer
     global criterion
+
+    train_dataset = data["train"]
 
     # ensure that model in this subprocess is in train mode
     model.train()
@@ -243,9 +250,38 @@ def train_sample(sample_id):
             lock.release()
 
 
-def test_sample():
-    pass
+def test_sample(dataset_name, subsample_of_indices):
+    global args
 
+    global data
+    global prediction_storage
+
+    global model
+    global criterion
+
+    # ensure that model in this subprocess is in test mode
+    model.eval()
+
+    loss = 0
+    dataset = data[dataset_name]
+    predictions = prediction_storage[dataset_name]
+    target_indices = torch.arange(1, dataset.num_classes + 1)
+
+    for idx in subsample_of_indices:
+        if idx is None:
+            continue
+        ltree, lsent, ltokens, rtree, rsent, rtokens, label = dataset[idx]
+        linput, rinput = Var(lsent, volatile=True), Var(rsent, volatile=True)
+        target = Var(map_label_to_target(label, dataset.num_classes), volatile=True)
+        if args.cuda:
+            linput, rinput = linput.cuda(), rinput.cuda()
+            target = target.cuda()
+        output = model(ltree, linput, rtree, rinput)
+        err = criterion(output, target)
+        loss += err.data[0]
+        predictions[idx] = torch.dot(target_indices, torch.exp(output.data.cpu()))
+
+    return loss
 
 
 def print_results(dataset_name, loss, pearson_stats, mse_stats):

@@ -2,18 +2,26 @@ from tqdm import tqdm
 import torch
 from torch.autograd import Variable as Var
 from utils import map_label_to_target
+import numpy as np
+from datetime import datetime
 
 class Trainer(object):
-    def __init__(self, args, model, criterion, optimizer, pool, train_sample, test_sample, data):
+    def __init__(
+            self, args, model, criterion, optimizer,
+            pool, pool_size,
+            train_sample, test_sample,
+            data, prediction_storage):
         super(Trainer, self).__init__()
         self.args       = args
         self.model      = model
         self.criterion  = criterion
         self.optimizer  = optimizer
         self.pool = pool
+        self.pool_size = pool_size
         self.train_sample = train_sample
         self.test_sample = test_sample
         self.data = data
+        self.prediction_storage = prediction_storage
 
     # helper function for training
     def train(self, epoch_id):
@@ -45,21 +53,32 @@ class Trainer(object):
 
     # helper function for testing
     def test(self, dataset_name, epoch_id):
+        start_time = datetime.now()
+        print("Testing epoch {}. Start time: {}. ".format(epoch_id + 1, start_time), end="")
+
         dataset = self.data[dataset_name]
+        predictions = self.prediction_storage[dataset_name]
 
         self.model.eval()
-        loss = 0
-        predictions = torch.zeros(len(dataset))
-        indices = torch.arange(1,dataset.num_classes+1)
-        for idx in tqdm(range(len(dataset)),desc='Testing epoch  {}'.format(epoch_id + 1)):
-            ltree, lsent, ltokens, rtree, rsent, rtokens, label = dataset[idx]
-            linput, rinput = Var(lsent, volatile=True), Var(rsent, volatile=True)
-            target = Var(map_label_to_target(label,dataset.num_classes), volatile=True)
-            if self.args.cuda:
-                linput, rinput = linput.cuda(), rinput.cuda()
-                target = target.cuda()
-            output = self.model(ltree,linput,rtree,rinput)
-            err = self.criterion(output, target)
-            loss += err.data[0]
-            predictions[idx] = torch.dot(indices,torch.exp(output.data.cpu()))
+
+        predictions.zero_()
+
+        sample_indices = list(range(len(dataset))) + [None] * (-len(dataset) % self.pool_size)  # note minus
+
+        sample_indices_sliced = np.random.permutation(sample_indices)
+        sample_indices_sliced.resize(self.pool_size, len(sample_indices) // self.pool_size)
+
+        subprocess_tasks = []
+        for idx in range(sample_indices_sliced.shape[0]):
+            subsample_of_indices = sample_indices_sliced[idx]
+            task = self.pool.apply_async(self.test_sample, (dataset_name, subsample_of_indices))
+            subprocess_tasks.append(task)
+
+        # wait till subprocesses finish their jobs
+        loss_list = [t.get() for t in subprocess_tasks]
+        loss = sum(loss_list)
+
+        end_time = datetime.now()
+        print("End time: {}. Spent time: {}.".format(end_time, end_time - start_time))
+
         return loss/len(dataset), predictions
