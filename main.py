@@ -11,6 +11,9 @@ from torch.autograd import Variable as Var
 import mkl
 import numpy as np
 import random
+from datetime import datetime
+import json
+import subprocess
 
 import torch.multiprocessing as mp
 
@@ -61,6 +64,14 @@ def main():
         torch.cuda.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
+
+    os.makedirs(args.checkpoints, exist_ok=True)
+    experiment_start_time = datetime.now()
+    model_checkpoint_file = os.path.join(args.checkpoints, experiment_start_time.isoformat() + ".checkpoint")
+    train_log_file = os.path.join(args.checkpoints, experiment_start_time.isoformat() + ".log.csv")
+    meta_data_file = os.path.join(args.checkpoints, experiment_start_time.isoformat() + ".meta.json")
+
+    save_meta(meta_data_file, args)
 
     train_dir = os.path.join(args.data,'train/')
     dev_dir = os.path.join(args.data,'dev/')
@@ -186,23 +197,43 @@ def main():
                 continue
             parameter.grad.data = grad_memory[name]
 
-        for epoch_id in range(args.epochs):
-            trainer.train(epoch_id)
-            train_loss, train_pred = trainer.test("train", epoch_id)
-            dev_loss, dev_pred     = trainer.test("dev", epoch_id)
-            test_loss, test_pred   = trainer.test("test", epoch_id)
+        with open(train_log_file, "w") as f:
+            columns = ["epoch"]
+            for dataset in ["train", "dev", "test"]:
+                for metric in ["pearson", "mse"]:
+                    for quantile in [25, 50, 75]:
+                        columns.append("{}_{}_{}".format(metric, dataset, quantile))
+            f.write("\t".join(columns) + "\n")
 
-            pearson_stats, mse_stats = get_median_and_confidence_interval(
-                train_pred, train_dataset.labels, metric_functions)
-            print_results("Train", train_loss, pearson_stats, mse_stats)
+            last_dev_loss = np.inf
+            for epoch_id in range(args.epochs):
+                trainer.train(epoch_id)
+                train_loss, train_pred = trainer.test("train", epoch_id)
+                dev_loss, dev_pred     = trainer.test("dev", epoch_id)
+                test_loss, test_pred   = trainer.test("test", epoch_id)
 
-            pearson_stats, mse_stats = get_median_and_confidence_interval(
-                dev_pred, dev_dataset.labels, metric_functions)
-            print_results("Dev", dev_loss, pearson_stats, mse_stats)
+                train_pearson_stats, train_mse_stats = get_median_and_confidence_interval(
+                    train_pred, train_dataset.labels, metric_functions)
+                print_results("Train", train_loss, train_pearson_stats, train_mse_stats)
 
-            pearson_stats, mse_stats = get_median_and_confidence_interval(
-                test_pred, test_dataset.labels, metric_functions)
-            print_results("Test", test_loss, pearson_stats, mse_stats)
+                dev_pearson_stats, dev_mse_stats = get_median_and_confidence_interval(
+                    dev_pred, dev_dataset.labels, metric_functions)
+                print_results("Dev", dev_loss, dev_pearson_stats, dev_mse_stats)
+
+                test_pearson_stats, test_mse_stats = get_median_and_confidence_interval(
+                    test_pred, test_dataset.labels, metric_functions)
+                print_results("Test", test_loss, test_pearson_stats, test_mse_stats)
+
+                log_results(
+                    f, epoch_id,
+                    train_pearson_stats, train_mse_stats,
+                    dev_pearson_stats, dev_mse_stats,
+                    test_pearson_stats, test_mse_stats)
+
+                if dev_loss < last_dev_loss:
+                    print("Saving model")
+                    torch.save(model.state_dict(), model_checkpoint_file)
+
 
 def train_sample(sample_id):
     global args
@@ -310,6 +341,30 @@ def get_median_and_confidence_interval(predictions, targets, metric_functions_li
     metric_statistics = np.percentile(metric_statistics, [25, 50, 75], axis=1).transpose()
 
     return metric_statistics
+
+
+def save_meta(meta_file, args):
+    result = subprocess.run("git log --pretty=format:'%H' -n 1".split(), stdout=subprocess.PIPE)
+    commit_hash = result.stdout.replace(b"'", b"").decode('utf-8')
+    with open(meta_file, "w") as f:
+        meta = {
+            "commit": commit_hash,
+            "args": vars(args)
+        }
+        json.dump(meta, f, ensure_ascii=False, indent=4, sort_keys=True)
+
+
+def log_results(
+        f, epoch,
+        train_pearson_stats, train_mse_stats,
+        dev_pearson_stats, dev_mse_stats,
+        test_pearson_stats, test_mse_stats):
+    data = [epoch]
+    for stats in [train_pearson_stats, train_mse_stats,
+            dev_pearson_stats, dev_mse_stats, test_pearson_stats, test_mse_stats]:
+        data.extend(list(stats))
+
+    f.write("\t".join(map(str, data)) + "\n")
 
 
 if __name__ == "__main__":

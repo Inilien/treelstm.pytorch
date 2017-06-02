@@ -7,6 +7,9 @@ def parse_args():
     parser.add_argument('--glove', default='/data/tmp/glove/',
                         help='directory with GLOVE embeddings')
 
+    parser.add_argument('--checkpoints', default='experiments/',
+        help="directory to save model's checkpoints into. Files will be named by current date")
+
     parser.add_argument('--encoder_type', default="TreeLSTM", choices=["TreeLSTM", "LSTM"],
         help='model type to use as sentence encoder')
 
