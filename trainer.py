@@ -63,6 +63,7 @@ class Trainer(object):
 
         predictions.zero_()
 
+        # prepare to share testing load among all processes equally in average
         sample_indices = list(range(len(dataset))) + [None] * (-len(dataset) % self.pool_size)  # note minus
 
         sample_indices_sliced = np.random.permutation(sample_indices)
